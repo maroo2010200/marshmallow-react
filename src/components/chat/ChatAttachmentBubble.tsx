@@ -1,5 +1,6 @@
 import React from "react";
 import type { MediaDetection } from "../../utils/richText";
+import { getVideoPosterUrl, getVideoSrcWithPoster } from "../../utils/media";
 
 interface ChatAttachmentBubbleProps {
   attachment: MediaDetection;
@@ -131,7 +132,8 @@ export const ChatAttachmentBubble: React.FC<ChatAttachmentBubbleProps> = ({
         }}
       >
         <video
-          src={attachment.mediaUrl}
+          src={getVideoSrcWithPoster(attachment.mediaUrl)}
+          poster={getVideoPosterUrl(attachment.mediaUrl) || undefined}
           controls
           playsInline
           preload="metadata"

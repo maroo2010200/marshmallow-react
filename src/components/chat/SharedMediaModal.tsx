@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { chatApi } from "../../api/chat";
 import type { Message } from "../../types/chat";
 import { URL_REGEX, extractMediaUrlFromLink, type MediaDetection } from "../../utils/richText";
+import { getVideoPosterUrl, getVideoSrcWithPoster } from "../../utils/media";
 import { LightboxModal } from "../LightboxModal";
 import {
   CloseIcon,
@@ -520,8 +521,11 @@ export function SharedMediaModal({
                                 }}
                               >
                                 <video
-                                  src={item.url}
+                                  src={getVideoSrcWithPoster(item.url)}
+                                  poster={getVideoPosterUrl(item.url) || undefined}
                                   preload="metadata"
+                                  playsInline
+                                  muted
                                   style={{
                                     width: "100%",
                                     height: "100%",

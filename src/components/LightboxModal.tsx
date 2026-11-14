@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { getMediaUrl, isVideoMedia } from "../utils/media";
+import {
+  getMediaUrl,
+  isVideoMedia,
+  getVideoPosterUrl,
+  getVideoSrcWithPoster,
+} from "../utils/media";
 
 export interface LightboxModalProps {
   isOpen: boolean;
@@ -259,10 +264,12 @@ export function LightboxModal({
         {isVideoMedia(currentUrl) ? (
           <video
             key={currentUrl}
-            src={currentUrl}
+            src={getVideoSrcWithPoster(currentUrl)}
+            poster={getVideoPosterUrl(currentUrl) || undefined}
             controls
             autoPlay
             playsInline
+            preload="metadata"
             style={{
               maxWidth: "100%",
               maxHeight: "86vh",
