@@ -217,7 +217,7 @@ export default function RegisterPage() {
                 color: "var(--text-secondary)",
                 fontSize: "14px",
                 lineHeight: 1.6,
-                margin: "0 0 20px",
+                margin: "0 0 16px",
               }}
             >
               We've sent a verification link to{" "}
@@ -226,6 +226,30 @@ export default function RegisterPage() {
               chair by the campfire.
             </p>
           )}
+
+          <div
+            style={{
+              backgroundColor: "rgba(201, 107, 50, 0.08)",
+              border: "1px solid rgba(201, 107, 50, 0.25)",
+              borderRadius: "var(--radius-lg)",
+              padding: "12px 16px",
+              margin: "0 0 20px",
+              textAlign: "left",
+              fontSize: "13px",
+              lineHeight: 1.5,
+              color: "var(--text-secondary)",
+              display: "flex",
+              gap: "10px",
+              alignItems: "flex-start",
+            }}
+          >
+            <span style={{ fontSize: "16px", flexShrink: 0 }}>💡</span>
+            <span>
+              <strong style={{ color: "var(--text-primary)" }}>Can't find it in your inbox?</strong>{" "}
+              Please check your <strong>Spam / Junk</strong> folder. If it arrived there, tap{" "}
+              <em>"Report not spam"</em> so future campfire notifications arrive directly in your Primary Inbox.
+            </span>
+          </div>
 
           {resendMessage && (
             <p
