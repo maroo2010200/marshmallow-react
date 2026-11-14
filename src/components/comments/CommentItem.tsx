@@ -246,7 +246,7 @@ export function CommentItem({
     (hasContentChanged || hasImageChanged);
 
   return (
-    <div style={{ position: "relative" }}>
+    <div id={`comment-${comment.id}`} style={{ position: "relative" }}>
       {/* Main Comment Row */}
       <div
         style={{

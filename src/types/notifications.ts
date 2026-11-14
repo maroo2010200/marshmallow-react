@@ -15,6 +15,7 @@ export interface NotificationItem {
   type: NotificationType;
   targetPostId?: number | null;
   targetCommentId?: number | null;
+  parentCommentId?: number | null;
   isRead: boolean;
   createdAt: string;
 }
