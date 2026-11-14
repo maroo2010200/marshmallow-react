@@ -19,11 +19,15 @@ import { soundEffects } from "../utils/soundEffects";
 interface NotificationContextType {
   unreadCount: number;
   setUnreadCount: React.Dispatch<React.SetStateAction<number>>;
+  refreshUnreadCount: () => Promise<void>;
   toastNotification: NotificationItem | null;
   clearToast: () => void;
   connectionState: HubConnectionState;
   subscribeToNotifications: (
     listener: (notification: NotificationItem) => void
+  ) => () => void;
+  subscribeToDeletedNotifications: (
+    listener: (notificationId: number) => void
   ) => () => void;
 }
 
@@ -50,6 +54,7 @@ export function NotificationProvider({
   const listenersRef = useRef<Set<(notification: NotificationItem) => void>>(
     new Set()
   );
+  const deletedListenersRef = useRef<Set<(id: number) => void>>(new Set());
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearToast = useCallback(() => {
@@ -60,11 +65,34 @@ export function NotificationProvider({
     setToastNotification(null);
   }, []);
 
+  const refreshUnreadCount = useCallback(async () => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const count = await notificationsApi.getUnreadCount();
+      setUnreadCount(count);
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
+
   const subscribeToNotifications = useCallback(
     (listener: (notification: NotificationItem) => void) => {
       listenersRef.current.add(listener);
       return () => {
         listenersRef.current.delete(listener);
+      };
+    },
+    []
+  );
+
+  const subscribeToDeletedNotifications = useCallback(
+    (listener: (id: number) => void) => {
+      deletedListenersRef.current.add(listener);
+      return () => {
+        deletedListenersRef.current.delete(listener);
       };
     },
     []
@@ -150,12 +178,24 @@ export function NotificationProvider({
 
     connection.on(
       "NotificationDeleted",
-      (_id: number, count?: number) => {
+      (id: number, count?: number) => {
         if (typeof count === "number") {
           setUnreadCount(count);
         } else {
           setUnreadCount((prev) => Math.max(0, prev - 1));
         }
+
+        // Dismiss live floating toast banner if it belongs to the deleted notification
+        setToastNotification((current) => (current?.id === id ? null : current));
+
+        // Dispatch to registered deleted notification listeners (e.g. dropdown, page)
+        deletedListenersRef.current.forEach((listener) => {
+          try {
+            listener(id);
+          } catch (err) {
+            console.error("Deleted notification listener error:", err);
+          }
+        });
       }
     );
 
@@ -275,10 +315,12 @@ export function NotificationProvider({
       value={{
         unreadCount,
         setUnreadCount,
+        refreshUnreadCount,
         toastNotification,
         clearToast,
         connectionState,
         subscribeToNotifications,
+        subscribeToDeletedNotifications,
       }}
     >
       {children}

@@ -57,7 +57,7 @@ function getNotificationConfig(type: NotificationType) {
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
-  const { setUnreadCount } = useNotifications();
+  const { setUnreadCount, refreshUnreadCount, subscribeToDeletedNotifications } = useNotifications();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -80,19 +80,31 @@ export default function NotificationsPage() {
         setNotifications((prev) => [...prev, ...res.items]);
       }
       setTotalCount(res.totalCount);
+      refreshUnreadCount();
     } catch (err) {
       console.error("Failed to load notifications", err);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [refreshUnreadCount]);
 
   useEffect(() => {
     setLoading(true);
     setPage(1);
     fetchNotifications(1, filterUnread);
-  }, [fetchNotifications, filterUnread]);
+    refreshUnreadCount();
+  }, [fetchNotifications, filterUnread, refreshUnreadCount]);
+
+  useEffect(() => {
+    const unsubscribeDeleted = subscribeToDeletedNotifications?.((deletedId) => {
+      setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+      setTotalCount((prev) => Math.max(0, prev - 1));
+    });
+    return () => {
+      unsubscribeDeleted?.();
+    };
+  }, [subscribeToDeletedNotifications]);
 
   const handleMarkAllRead = async () => {
     setMarkingAll(true);
@@ -100,6 +112,7 @@ export default function NotificationsPage() {
       await notificationsApi.markAllAsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
+      refreshUnreadCount();
     } catch (err) {
       console.error("Failed to mark all as read", err);
     } finally {
@@ -114,8 +127,7 @@ export default function NotificationsPage() {
         setNotifications((prev) =>
           prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
         );
-        const count = await notificationsApi.getUnreadCount();
-        setUnreadCount(count);
+        await refreshUnreadCount();
       } catch {
         // ignore
       }
@@ -151,8 +163,7 @@ export default function NotificationsPage() {
       await notificationsApi.deleteNotification(id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       setTotalCount((prev) => Math.max(0, prev - 1));
-      const count = await notificationsApi.getUnreadCount();
-      setUnreadCount(count);
+      await refreshUnreadCount();
     } catch (err) {
       console.error("Failed to delete notification", err);
     }

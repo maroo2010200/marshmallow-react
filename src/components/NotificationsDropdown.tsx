@@ -23,7 +23,7 @@ export function NotificationsDropdown({
   triggerRef,
 }: NotificationsDropdownProps) {
   const navigate = useNavigate();
-  const { subscribeToNotifications } = useNotifications();
+  const { subscribeToNotifications, subscribeToDeletedNotifications, refreshUnreadCount } = useNotifications();
   const [activeTab, setActiveTab] = useState<"all" | "unread">("all");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -34,21 +34,28 @@ export function NotificationsDropdown({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Subscribe to live incoming SignalR notifications
+  // Subscribe to live incoming SignalR notifications & deletions
   useEffect(() => {
     if (!isOpen) return;
 
-    const unsubscribe = subscribeToNotifications((incoming) => {
+    refreshUnreadCount();
+
+    const unsubscribeNew = subscribeToNotifications((incoming) => {
       setNotifications((prev) => [
         incoming,
         ...prev.filter((n) => n.id !== incoming.id),
       ]);
     });
 
+    const unsubscribeDeleted = subscribeToDeletedNotifications((deletedId) => {
+      setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeNew();
+      unsubscribeDeleted();
     };
-  }, [isOpen, subscribeToNotifications]);
+  }, [isOpen, subscribeToNotifications, subscribeToDeletedNotifications, refreshUnreadCount]);
 
   // Close when clicking outside
   useEffect(() => {
@@ -105,6 +112,7 @@ export function NotificationsDropdown({
         setPage(pageNum);
         const loadedCount = (pageNum - 1) * 15 + res.items.length;
         setHasMore(loadedCount < res.totalCount);
+        refreshUnreadCount();
       } catch (err: any) {
         setError("Failed to load notifications.");
       } finally {
@@ -112,7 +120,7 @@ export function NotificationsDropdown({
         setLoadingMore(false);
       }
     },
-    [activeTab]
+    [activeTab, refreshUnreadCount]
   );
 
   // Trigger load when opened or tab changes
@@ -132,6 +140,7 @@ export function NotificationsDropdown({
         setNotifications([]);
       }
       onUnreadCountChanged?.(0);
+      refreshUnreadCount();
     } catch {
       // ignore
     }
@@ -145,8 +154,7 @@ export function NotificationsDropdown({
       );
       try {
         await notificationsApi.markAsRead(item.id);
-        const unreadCount = await notificationsApi.getUnreadCount();
-        onUnreadCountChanged?.(unreadCount);
+        await refreshUnreadCount();
       } catch {
         // ignore
       }
@@ -162,8 +170,7 @@ export function NotificationsDropdown({
     try {
       await notificationsApi.deleteNotification(id);
       if (itemToDelete && !itemToDelete.isRead) {
-        const unreadCount = await notificationsApi.getUnreadCount();
-        onUnreadCountChanged?.(unreadCount);
+        await refreshUnreadCount();
       }
     } catch {
       // Revert if error
