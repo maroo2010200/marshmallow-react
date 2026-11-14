@@ -71,6 +71,11 @@ export const commentsApi = {
     return response.data;
   },
 
+  getComment: async (commentId: number): Promise<Comment> => {
+    const response = await api.get<Comment>(`/comments/${commentId}`);
+    return response.data;
+  },
+
   updateComment: async (
     commentId: number,
     content: string,

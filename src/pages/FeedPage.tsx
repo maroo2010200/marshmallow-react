@@ -101,6 +101,8 @@ function FeedPage() {
   const [selectedPostForComments, setSelectedPostForComments] =
     useState<Post | null>(null);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [targetCommentId, setTargetCommentId] = useState<number | null>(null);
+  const [parentCommentId, setParentCommentId] = useState<number | null>(null);
 
   const handleOpenComments = (post: Post) => {
     setSelectedPostForComments(post);
@@ -110,12 +112,16 @@ function FeedPage() {
   const handleCloseComments = () => {
     setIsCommentsOpen(false);
     setSelectedPostForComments(null);
+    setTargetCommentId(null);
+    setParentCommentId(null);
   };
 
-  // Handle deep-linking from notifications (?postId=123&openComments=true)
+  // Handle deep-linking from notifications (?postId=123&openComments=true&commentId=45&parentCommentId=10)
   const [searchParams, setSearchParams] = useSearchParams();
   const targetPostIdParam = searchParams.get("postId");
   const openCommentsParam = searchParams.get("openComments");
+  const targetCommentIdParam = searchParams.get("commentId");
+  const parentCommentIdParam = searchParams.get("parentCommentId");
   const isMountedRef = useRef(true);
   const activeTargetPostIdRef = useRef<number | null>(null);
   const fetchedTargetPostIdRef = useRef<number | null>(null);
@@ -145,6 +151,8 @@ function FeedPage() {
           const next = new URLSearchParams(prev);
           next.delete("postId");
           next.delete("openComments");
+          next.delete("commentId");
+          next.delete("parentCommentId");
           return next;
         },
         { replace: true }
@@ -170,6 +178,12 @@ function FeedPage() {
       });
 
       if (openCommentsParam === "true") {
+        if (targetCommentIdParam && !isNaN(Number(targetCommentIdParam))) {
+          setTargetCommentId(Number(targetCommentIdParam));
+        }
+        if (parentCommentIdParam && !isNaN(Number(parentCommentIdParam))) {
+          setParentCommentId(Number(parentCommentIdParam));
+        }
         handleOpenComments(foundPost);
       }
 
@@ -682,6 +696,8 @@ function FeedPage() {
         post={selectedPostForComments}
         isOpen={isCommentsOpen}
         onClose={handleCloseComments}
+        targetCommentId={targetCommentId}
+        parentCommentId={parentCommentId}
         onCommentAdded={(newComment) => {
           if (selectedPostForComments) {
             recordCommentAdded(selectedPostForComments.id, newComment.id);

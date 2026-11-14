@@ -57,6 +57,8 @@ interface UseCommentsModalOptions {
   post: Post | null;
   onCommentAdded?: (comment: Comment) => void;
   onCommentDeleted?: (deletedCount: number, deletedCommentId?: number) => void;
+  targetCommentId?: number | null;
+  parentCommentId?: number | null;
 }
 
 export function useCommentsModal({
@@ -64,6 +66,8 @@ export function useCommentsModal({
   post,
   onCommentAdded,
   onCommentDeleted,
+  targetCommentId,
+  parentCommentId,
 }: UseCommentsModalOptions) {
   const { isAuthenticated } = useAuth();
 
@@ -136,8 +140,56 @@ export function useCommentsModal({
 
     try {
       const data = await commentsApi.getComments(postId, 1, PAGE_SIZE);
-      const items = data?.items ?? [];
+      let items = data?.items ?? [];
       const totalCount = data?.totalCount;
+
+      // Deep-linking: auto-expand parent comment replies & scroll to target comment
+      if (targetCommentId) {
+        let effectiveParentId = parentCommentId ?? null;
+
+        if (!effectiveParentId) {
+          const isTopLevel = items.some((c) => c.id === targetCommentId);
+          if (!isTopLevel) {
+            try {
+              const singleComment = await commentsApi.getComment(targetCommentId);
+              if (singleComment?.parentCommentId) {
+                effectiveParentId = singleComment.parentCommentId;
+              }
+            } catch {
+              // fallback if single comment lookup is unreachable
+            }
+          }
+        }
+
+        if (effectiveParentId) {
+          try {
+            const replies = await commentsApi.getReplies(effectiveParentId);
+            items = attachRepliesInTree(items, effectiveParentId, replies);
+            setExpandedCommentIds((prev) => new Set(prev).add(effectiveParentId!));
+          } catch {
+            // ignore
+          }
+        }
+
+        // Schedule smooth scroll & highlight
+        setTimeout(() => {
+          const el = document.getElementById(`comment-${targetCommentId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            const originalTransition = el.style.transition;
+            const originalBg = el.style.backgroundColor;
+            el.style.transition = "background-color 0.35s ease, border-radius 0.2s ease";
+            el.style.backgroundColor = "var(--primary-light, rgba(24, 119, 242, 0.15))";
+            el.style.borderRadius = "8px";
+            setTimeout(() => {
+              el.style.backgroundColor = originalBg;
+              setTimeout(() => {
+                el.style.transition = originalTransition;
+              }, 400);
+            }, 2500);
+          }
+        }, 200);
+      }
 
       setComments(items);
       commentsRef.current = items;
@@ -156,7 +208,7 @@ export function useCommentsModal({
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [postId]);
+  }, [postId, targetCommentId, parentCommentId]);
 
   useEffect(() => {
     if (!isOpen || !postId) return;

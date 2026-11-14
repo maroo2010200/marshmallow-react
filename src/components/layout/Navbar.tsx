@@ -82,10 +82,17 @@ function Navbar() {
         item.type === "ReplyCreated" ||
         item.type === "CommentLiked";
 
+      const commentQuery = item.targetCommentId
+        ? `&commentId=${item.targetCommentId}`
+        : "";
+      const parentCommentQuery = item.parentCommentId
+        ? `&parentCommentId=${item.parentCommentId}`
+        : "";
+
       navigate(
         `/feed?postId=${item.targetPostId}${
           openComments ? "&openComments=true" : ""
-        }`
+        }${commentQuery}${parentCommentQuery}`
       );
     }
   };

@@ -17,6 +17,8 @@ interface CommentsModalProps {
   onClose: () => void;
   onCommentAdded?: (comment: Comment) => void;
   onCommentDeleted?: (deletedCount: number, deletedCommentId?: number) => void;
+  targetCommentId?: number | null;
+  parentCommentId?: number | null;
 }
 
 export function CommentsModal({
@@ -25,6 +27,8 @@ export function CommentsModal({
   onClose,
   onCommentAdded,
   onCommentDeleted,
+  targetCommentId,
+  parentCommentId,
 }: CommentsModalProps) {
   const { user, isAuthenticated } = useAuth();
 
@@ -60,7 +64,14 @@ export function CommentsModal({
     handleEditComment,
     handleDeleteComment,
     handleTogglePinComment,
-  } = useCommentsModal({ isOpen, post, onCommentAdded, onCommentDeleted });
+  } = useCommentsModal({
+    isOpen,
+    post,
+    onCommentAdded,
+    onCommentDeleted,
+    targetCommentId,
+    parentCommentId,
+  });
 
   const [lightboxState, setLightboxState] = useState<{
     images: string[];
