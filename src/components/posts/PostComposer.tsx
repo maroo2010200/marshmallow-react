@@ -5,6 +5,8 @@ import { mediaApi } from "../../api/media";
 import {
   getMediaUrl,
   isVideoMedia,
+  getVideoPosterUrl,
+  getVideoSrcWithPoster,
   detectUploadKind,
   getUploadStatusLabel,
   extractDroppedImageUrl,
@@ -778,8 +780,11 @@ export function PostComposer({
                   {isVideo ? (
                     <>
                       <video
-                        src={getMediaUrl(url)}
+                        src={getVideoSrcWithPoster(url)}
+                        poster={getVideoPosterUrl(url) || undefined}
                         preload="metadata"
+                        playsInline
+                        muted
                         style={{
                           width: "100%",
                           height: "100%",

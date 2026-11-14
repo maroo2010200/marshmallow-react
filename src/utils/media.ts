@@ -108,6 +108,46 @@ export function isVideoMedia(path?: string | null): boolean {
   return /\.(mp4|webm|mov|mkv|ogg|m4v|avi|flv|wmv)$/i.test(cleanPath);
 }
 
+/**
+ * Generates an automatic poster image URL for videos.
+ * - For Cloudinary video uploads: replaces the video extension with .jpg and injects start offset 0 (so_0,f_auto,q_auto)
+ *   so Cloudinary automatically extracts and returns the first frame as a fast CDN image.
+ * - For non-Cloudinary videos: returns empty string (allowing the #t=0.001 media fragment fallback).
+ */
+export function getVideoPosterUrl(path?: string | null): string {
+  const url = getMediaUrl(path);
+  if (!url || !isVideoMedia(url)) return "";
+
+  // Cloudinary video URL: .../video/upload/(v123/)?.../name.mp4
+  const videoUploadToken = "/video/upload/";
+  const tokenIndex = url.indexOf(videoUploadToken);
+  if (tokenIndex !== -1 && url.includes("res.cloudinary.com")) {
+    const withoutQuery = url.split("?")[0].split("#")[0];
+    const posterBase = withoutQuery.replace(/\.[a-zA-Z0-9]+$/i, ".jpg");
+    const before = posterBase.slice(0, tokenIndex + videoUploadToken.length);
+    const after = posterBase.slice(tokenIndex + videoUploadToken.length);
+    if (!after.startsWith("so_")) {
+      return `${before}so_0,f_auto,q_auto/${after}`;
+    }
+    return posterBase;
+  }
+
+  return "";
+}
+
+/**
+ * Ensures video source URLs cue to the first frame on iOS Safari / WebKit.
+ * Appending the standard media fragment `#t=0.001` (RFC 7036) instructs iOS Safari
+ * to decode and display the first frame instead of rendering a solid black rectangle.
+ */
+export function getVideoSrcWithPoster(path?: string | null): string {
+  const url = getMediaUrl(path);
+  if (!url) return "";
+  if (!isVideoMedia(url)) return url;
+  if (url.includes("#t=")) return url;
+  return `${url}#t=0.001`;
+}
+
 export type UploadMediaKind = "photo" | "video" | "media";
 
 const UPLOAD_STATUS_LABELS: Record<UploadMediaKind, string> = {

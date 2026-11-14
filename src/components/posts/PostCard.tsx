@@ -6,6 +6,8 @@ import { mediaApi } from "../../api/media";
 import {
   getMediaUrl,
   isVideoMedia,
+  getVideoPosterUrl,
+  getVideoSrcWithPoster,
   detectUploadKind,
   getUploadStatusLabel,
   UPLOAD_STATUS_BANNER_STYLE,
@@ -1271,8 +1273,11 @@ export function PostCard({
                     {isVideo ? (
                       <>
                         <video
-                          src={getMediaUrl(url)}
+                          src={getVideoSrcWithPoster(url)}
+                          poster={getVideoPosterUrl(url) || undefined}
                           preload="metadata"
+                          playsInline
+                          muted
                           style={{
                             width: "100%",
                             height: "100%",

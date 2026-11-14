@@ -20,7 +20,13 @@ import { ChatIcon } from "../components/ChatIcon";
 import { Avatar } from "../components/Avatar";
 import { MainLayout } from "../components/layout/MainLayout";
 import { MarshmallowLoader } from "../components/MarshmallowLoader";
-import { getMediaUrl, getPostOptimizedUrl, isVideoMedia } from "../utils/media";
+import {
+  getMediaUrl,
+  getPostOptimizedUrl,
+  isVideoMedia,
+  getVideoPosterUrl,
+  getVideoSrcWithPoster,
+} from "../utils/media";
 import { soundEffects } from "../utils/soundEffects";
 
 function formatMemberDate(dateString: string): string {
@@ -1810,7 +1816,8 @@ export function ProfilePage() {
                   >
                     {isVideo ? (
                       <video
-                        src={getMediaUrl(mediaUrl)}
+                        src={getVideoSrcWithPoster(mediaUrl)}
+                        poster={getVideoPosterUrl(mediaUrl) || undefined}
                         preload="metadata"
                         muted
                         playsInline

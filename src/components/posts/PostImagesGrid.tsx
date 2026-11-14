@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { getPostOptimizedUrl, getMediaUrl, isVideoMedia } from "../../utils/media";
+import {
+  getPostOptimizedUrl,
+  getMediaUrl,
+  isVideoMedia,
+  getVideoPosterUrl,
+  getVideoSrcWithPoster,
+} from "../../utils/media";
 
 export interface PostImagesGridProps {
   images: string[];
@@ -50,8 +56,11 @@ export function PostImagesGrid({ images, onImageClick, maxHeight }: PostImagesGr
           }}
         >
           <video
-            src={mediaUrl}
+            src={getVideoSrcWithPoster(mediaUrl)}
+            poster={getVideoPosterUrl(mediaUrl) || undefined}
             preload="metadata"
+            playsInline
+            muted
             style={{
               ...imageStyle(idx),
               ...customStyle,
@@ -155,7 +164,8 @@ export function PostImagesGrid({ images, onImageClick, maxHeight }: PostImagesGr
           }}
         >
           <video
-            src={getMediaUrl(images[0])}
+            src={getVideoSrcWithPoster(images[0])}
+            poster={getVideoPosterUrl(images[0]) || undefined}
             controls
             playsInline
             preload="metadata"
