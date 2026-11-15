@@ -1,9 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, Navigate, Link } from "react-router-dom";
 import { MarshmallowLogo } from "../components/MarshmallowLogo";
 import { MarshmallowLoader } from "../components/MarshmallowLoader";
+import { OtpCodeInput } from "../components/auth/OtpCodeInput";
 
 function extractErrorMessage(
   err: unknown,
@@ -82,10 +83,26 @@ export default function RegisterPage() {
   const [resendMessage, setResendMessage] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
   const [isResendError, setIsResendError] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(60);
   const isSubmittingRef = useRef(false);
   const navigate = useNavigate();
 
-  const { register, resendVerificationEmail, isAuthenticated } = useAuth();
+  const { register, resendVerificationEmail, isAuthenticated, verifyCode } = useAuth();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (success && resendCooldown > 0) {
+      timer = setTimeout(() => {
+        setResendCooldown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [success, resendCooldown]);
 
   if (isAuthenticated) {
     return <Navigate to="/feed" replace />;
@@ -140,13 +157,38 @@ export default function RegisterPage() {
     }
   };
 
+  const handleVerifyOtp = async (codeToVerify?: string) => {
+    const code = (codeToVerify || otpCode).trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+      setVerifyError("Please enter the complete 6-digit code.");
+      return;
+    }
+
+    setVerifying(true);
+    setVerifyError("");
+
+    try {
+      await verifyCode(email.trim(), code);
+      navigate("/verify", { replace: true });
+    } catch (err) {
+      setVerifyError(
+        extractErrorMessage(err, "Invalid or expired verification code.")
+      );
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleResend = async () => {
+    if (resendCooldown > 0 || resendLoading) return;
     setResendLoading(true);
     setResendMessage("");
     setIsResendError(false);
+    setVerifyError("");
     try {
       const result = await resendVerificationEmail(email.trim());
-      setResendMessage(result);
+      setResendMessage(result || "A new 6-digit code has been sent to your email.");
+      setResendCooldown(60);
     } catch (err) {
       setIsResendError(true);
       setResendMessage(
@@ -157,7 +199,7 @@ export default function RegisterPage() {
     }
   };
 
-  // Registration Success / Check Email View
+  // Registration Success / OTP Verification View
   if (success) {
     return (
       <div
@@ -188,13 +230,13 @@ export default function RegisterPage() {
               height: "60px",
               margin: "0 auto 18px",
               borderRadius: "50%",
-              backgroundColor: "rgba(43, 138, 62, 0.12)",
-              color: "#2b8a3e",
+              backgroundColor: "rgba(201, 107, 50, 0.12)",
+              color: "var(--primary)",
               fontSize: "28px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "1px solid rgba(43, 138, 62, 0.25)",
+              border: "1px solid rgba(201, 107, 50, 0.25)",
             }}
           >
             ✉️
@@ -202,30 +244,115 @@ export default function RegisterPage() {
 
           <h1
             style={{
-              margin: "0 0 10px",
+              margin: "0 0 8px",
               fontSize: "24px",
               fontWeight: 800,
               color: "var(--text-primary)",
             }}
           >
-            Check your Inbox!
+            Enter Verification Code
           </h1>
 
-          {!resendMessage && (
-            <p
+          <p
+            style={{
+              color: "var(--text-secondary)",
+              fontSize: "14px",
+              lineHeight: 1.5,
+              margin: "0 0 20px",
+            }}
+          >
+            We've sent a 6-digit verification code to{" "}
+            <strong style={{ color: "var(--text-primary)" }}>{email}</strong>.
+          </p>
+
+          <OtpCodeInput
+            value={otpCode}
+            onChange={(code) => {
+              setOtpCode(code);
+              setVerifyError("");
+            }}
+            onComplete={(code) => handleVerifyOtp(code)}
+            disabled={verifying}
+            hasError={!!verifyError}
+            autoFocus
+          />
+
+          {verifyError && (
+            <div
               style={{
-                color: "var(--text-secondary)",
-                fontSize: "14px",
-                lineHeight: 1.6,
-                margin: "0 0 16px",
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                border: "1px solid rgba(239, 68, 68, 0.25)",
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+                fontSize: "13px",
+                margin: "12px 0",
+                textAlign: "center",
               }}
             >
-              We've sent a verification link to{" "}
-              <strong style={{ color: "var(--text-primary)" }}>{email}</strong>.
-              Click the link in the email to activate your account and pull up your
-              chair by the campfire.
-            </p>
+              {verifyError}
+            </div>
           )}
+
+          {resendMessage && (
+            <div
+              style={{
+                backgroundColor: isResendError
+                  ? "rgba(239, 68, 68, 0.1)"
+                  : "rgba(43, 138, 62, 0.1)",
+                color: isResendError ? "#ef4444" : "#2b8a3e",
+                border: `1px solid ${
+                  isResendError
+                    ? "rgba(239, 68, 68, 0.25)"
+                    : "rgba(43, 138, 62, 0.25)"
+                }`,
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+                fontSize: "13px",
+                margin: "12px 0",
+                textAlign: "center",
+              }}
+            >
+              {resendMessage}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => handleVerifyOtp()}
+            disabled={verifying || otpCode.trim().length !== 6}
+            style={{
+              width: "100%",
+              padding: "12px 18px",
+              marginTop: "8px",
+              marginBottom: "14px",
+              borderRadius: "var(--radius-full)",
+              backgroundColor: "var(--primary)",
+              color: "#ffffff",
+              border: "none",
+              fontWeight: 700,
+              fontSize: "14px",
+              cursor:
+                verifying || otpCode.trim().length !== 6
+                  ? "not-allowed"
+                  : "pointer",
+              opacity: verifying || otpCode.trim().length !== 6 ? 0.6 : 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              boxShadow: "0 4px 14px rgba(201, 107, 50, 0.3)",
+            }}
+          >
+            {verifying ? (
+              <>
+                <MarshmallowLoader size="sm" />
+                <span>Verifying...</span>
+              </>
+            ) : (
+              "Verify & Continue"
+            )}
+          </button>
 
           <div
             style={{
@@ -233,9 +360,9 @@ export default function RegisterPage() {
               border: "1px solid rgba(201, 107, 50, 0.25)",
               borderRadius: "var(--radius-lg)",
               padding: "12px 16px",
-              margin: "0 0 20px",
+              margin: "12px 0 16px",
               textAlign: "left",
-              fontSize: "13px",
+              fontSize: "12.5px",
               lineHeight: 1.5,
               color: "var(--text-secondary)",
               display: "flex",
@@ -245,37 +372,22 @@ export default function RegisterPage() {
           >
             <span style={{ fontSize: "16px", flexShrink: 0 }}>💡</span>
             <span>
-              <strong style={{ color: "var(--text-primary)" }}>Can't find it in your inbox?</strong>{" "}
-              Please check your <strong>Spam / Junk</strong> folder. If it arrived there, tap{" "}
-              <em>"Report not spam"</em> so future campfire notifications arrive directly in your Primary Inbox.
+              <strong style={{ color: "var(--text-primary)" }}>Can't find the email?</strong>{" "}
+              Please check your <strong>Spam / Junk</strong> folder or tap Resend below.
             </span>
           </div>
-
-          {resendMessage && (
-            <p
-              style={{
-                color: isResendError ? "#e02424" : "#2b8a3e",
-                fontSize: "14px",
-                lineHeight: 1.5,
-                margin: "0 0 20px",
-              }}
-            >
-              {resendMessage}
-            </p>
-          )}
 
           <div
             style={{
               display: "flex",
               flexDirection: "column",
               gap: "10px",
-              marginTop: "20px",
             }}
           >
             <button
               type="button"
               onClick={handleResend}
-              disabled={resendLoading}
+              disabled={resendLoading || resendCooldown > 0}
               style={{
                 padding: "11px 18px",
                 borderRadius: "var(--radius-full)",
@@ -283,12 +395,19 @@ export default function RegisterPage() {
                 color: "var(--primary)",
                 border: "1px solid rgba(201, 107, 50, 0.2)",
                 fontWeight: 600,
-                fontSize: "14px",
-                cursor: resendLoading ? "not-allowed" : "pointer",
-                opacity: resendLoading ? 0.6 : 1,
+                fontSize: "13.5px",
+                cursor:
+                  resendLoading || resendCooldown > 0
+                    ? "not-allowed"
+                    : "pointer",
+                opacity: resendLoading || resendCooldown > 0 ? 0.65 : 1,
               }}
             >
-              {resendLoading ? "Resending email..." : "Resend Verification Email"}
+              {resendLoading
+                ? "Resending email..."
+                : resendCooldown > 0
+                ? `Resend code in ${resendCooldown}s`
+                : "Resend Verification Code"}
             </button>
 
             <button
@@ -296,6 +415,8 @@ export default function RegisterPage() {
               onClick={() => {
                 setSuccess(false);
                 setError("");
+                setOtpCode("");
+                setVerifyError("");
                 navigate("/login");
               }}
               style={{
@@ -305,7 +426,7 @@ export default function RegisterPage() {
                 color: "var(--text-primary)",
                 border: "1px solid var(--border-color)",
                 fontWeight: 600,
-                fontSize: "14px",
+                fontSize: "13.5px",
                 cursor: "pointer",
               }}
             >
