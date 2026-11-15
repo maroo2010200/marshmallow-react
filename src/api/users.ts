@@ -32,8 +32,9 @@ export const usersApi = {
   changePassword: async (data: {
     currentPassword: string;
     newPassword: string;
-  }): Promise<{ message: string }> => {
-    const response = await api.post<{ message: string }>("/users/change-password", data);
+    code?: string;
+  }): Promise<{ message: string; requiresOtp?: boolean }> => {
+    const response = await api.post<{ message: string; requiresOtp?: boolean }>("/users/change-password", data);
     return response.data;
   },
 
