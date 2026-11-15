@@ -33,8 +33,8 @@ export const usersApi = {
     currentPassword: string;
     newPassword: string;
     code?: string;
-  }): Promise<{ message: string; requiresOtp?: boolean }> => {
-    const response = await api.post<{ message: string; requiresOtp?: boolean }>("/users/change-password", data);
+  }): Promise<{ message: string; requiresOtp?: boolean; RequiresOtp?: boolean }> => {
+    const response = await api.post<{ message: string; requiresOtp?: boolean; RequiresOtp?: boolean }>("/users/change-password", data);
     return response.data;
   },
 
