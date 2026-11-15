@@ -6,6 +6,7 @@ import { usersApi } from "../api/users";
 import { MainLayout } from "../components/layout/MainLayout";
 import { Avatar } from "../components/Avatar";
 import { MarshmallowLoader } from "../components/MarshmallowLoader";
+import { OtpCodeInput } from "../components/auth/OtpCodeInput";
 import { soundEffects, isSoundEnabled, setSoundEnabled } from "../utils/soundEffects";
 
 type SettingsTab = "account" | "appearance" | "notifications" | "privacy";
@@ -71,6 +72,23 @@ export default function SettingsPage() {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
+  const [passwordOtpStep, setPasswordOtpStep] = useState(false);
+  const [passwordOtpCode, setPasswordOtpCode] = useState("");
+  const [passwordOtpError, setPasswordOtpError] = useState<string | null>(null);
+  const [passwordOtpLoading, setPasswordOtpLoading] = useState(false);
+  const [passwordResendCooldown, setPasswordResendCooldown] = useState(0);
+  const [passwordResendLoading, setPasswordResendLoading] = useState(false);
+  const [passwordResendMessage, setPasswordResendMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (passwordResendCooldown > 0) {
+      timer = setTimeout(() => setPasswordResendCooldown((c) => c - 1), 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [passwordResendCooldown]);
 
   // Delete Account state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -104,11 +122,12 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle password submit
+  // Handle password submit - Step 1: Request OTP
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
     setPasswordSuccess(null);
+    setPasswordResendMessage(null);
 
     if (!currentPassword) {
       setPasswordError("Please enter your current password.");
@@ -129,10 +148,18 @@ export default function SettingsPage() {
         currentPassword,
         newPassword,
       });
-      setPasswordSuccess(res.message || "Password updated successfully!");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+
+      if (res.requiresOtp) {
+        setPasswordOtpStep(true);
+        setPasswordOtpCode("");
+        setPasswordOtpError(null);
+        setPasswordResendCooldown(60);
+      } else {
+        setPasswordSuccess(res.message || "Password updated successfully!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
     } catch (err: unknown) {
       const axiosError = err as { response?: { data?: { message?: string } } };
       setPasswordError(
@@ -142,6 +169,71 @@ export default function SettingsPage() {
     } finally {
       setPasswordLoading(false);
     }
+  };
+
+  // Handle password submit - Step 2: Confirm OTP
+  const handleConfirmPasswordOtp = async (codeToVerify?: string) => {
+    const code = (codeToVerify || passwordOtpCode).trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+      setPasswordOtpError("Please enter the complete 6-digit code.");
+      return;
+    }
+
+    setPasswordOtpLoading(true);
+    setPasswordOtpError(null);
+
+    try {
+      const res = await usersApi.changePassword({
+        currentPassword,
+        newPassword,
+        code,
+      });
+      setPasswordSuccess(res.message || "Password updated successfully!");
+      setPasswordOtpStep(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordOtpCode("");
+      setPasswordResendMessage(null);
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { message?: string } } };
+      setPasswordOtpError(
+        axiosError.response?.data?.message ||
+          "Invalid or expired verification code. Please try again."
+      );
+    } finally {
+      setPasswordOtpLoading(false);
+    }
+  };
+
+  const handleResendPasswordOtp = async () => {
+    if (passwordResendCooldown > 0 || passwordResendLoading) return;
+    setPasswordResendLoading(true);
+    setPasswordOtpError(null);
+    setPasswordResendMessage(null);
+
+    try {
+      await usersApi.changePassword({
+        currentPassword,
+        newPassword,
+      });
+      setPasswordResendMessage("A new verification code has been sent to your email.");
+      setPasswordResendCooldown(60);
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { message?: string } } };
+      setPasswordOtpError(
+        axiosError.response?.data?.message || "Failed to resend code."
+      );
+    } finally {
+      setPasswordResendLoading(false);
+    }
+  };
+
+  const handleCancelPasswordOtp = () => {
+    setPasswordOtpStep(false);
+    setPasswordOtpCode("");
+    setPasswordOtpError(null);
+    setPasswordResendMessage(null);
   };
 
   // Handle delete account
@@ -457,160 +549,103 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <form onSubmit={handleChangePassword}>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 14,
-                  }}
-                >
-                  {/* Current Password */}
-                  <div>
-                    <label
-                      htmlFor="current-pw"
-                      style={{
-                        display: "block",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--text-primary)",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Current Password
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        id="current-pw"
-                        type={showCurrentPw ? "text" : "password"}
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Enter your current password"
+              {passwordOtpStep ? (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      marginBottom: 16,
+                      padding: "12px 14px",
+                      borderRadius: "var(--radius-lg)",
+                      backgroundColor: "rgba(201, 107, 50, 0.08)",
+                      border: "1px solid rgba(201, 107, 50, 0.2)",
+                    }}
+                  >
+                    <span style={{ fontSize: 24, flexShrink: 0 }}>🔒</span>
+                    <div>
+                      <h4
                         style={{
-                          width: "100%",
-                          padding: "10px 42px 10px 14px",
-                          borderRadius: "var(--radius-md)",
-                          border: "1px solid var(--border-color)",
-                          backgroundColor: "var(--bg-input)",
+                          margin: 0,
+                          fontSize: 14,
+                          fontWeight: 700,
                           color: "var(--text-primary)",
-                          fontSize: 14,
-                          boxSizing: "border-box",
-                          outline: "none",
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowCurrentPw((prev) => !prev)}
-                        style={{
-                          position: "absolute",
-                          right: 12,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "var(--text-secondary)",
-                          fontSize: 14,
-                          padding: 4,
                         }}
                       >
-                        {showCurrentPw ? "🙈" : "👁️"}
-                      </button>
+                        Enter 6-Digit Verification Code
+                      </h4>
+                      <p
+                        style={{
+                          margin: "2px 0 0",
+                          fontSize: 12.5,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        We've sent a 6-digit security code to your email to verify your identity.
+                      </p>
                     </div>
                   </div>
 
-                  {/* New Password */}
-                  <div>
-                    <label
-                      htmlFor="new-pw"
-                      style={{
-                        display: "block",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--text-primary)",
-                        marginBottom: 6,
-                      }}
-                    >
-                      New Password
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        id="new-pw"
-                        type={showNewPw ? "text" : "password"}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="At least 6 characters"
-                        style={{
-                          width: "100%",
-                          padding: "10px 42px 10px 14px",
-                          borderRadius: "var(--radius-md)",
-                          border: "1px solid var(--border-color)",
-                          backgroundColor: "var(--bg-input)",
-                          color: "var(--text-primary)",
-                          fontSize: 14,
-                          boxSizing: "border-box",
-                          outline: "none",
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPw((prev) => !prev)}
-                        style={{
-                          position: "absolute",
-                          right: 12,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "var(--text-secondary)",
-                          fontSize: 14,
-                          padding: 4,
-                        }}
-                      >
-                        {showNewPw ? "🙈" : "👁️"}
-                      </button>
-                    </div>
-                  </div>
+                  <OtpCodeInput
+                    value={passwordOtpCode}
+                    onChange={(val) => {
+                      setPasswordOtpCode(val);
+                      setPasswordOtpError(null);
+                    }}
+                    onComplete={(code) => handleConfirmPasswordOtp(code)}
+                    disabled={passwordOtpLoading}
+                    hasError={Boolean(passwordOtpError)}
+                    autoFocus
+                  />
 
-                  {/* Confirm Password */}
-                  <div>
-                    <label
-                      htmlFor="confirm-pw"
+                  {passwordOtpError && (
+                    <div
                       style={{
-                        display: "block",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--text-primary)",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Confirm New Password
-                    </label>
-                    <input
-                      id="confirm-pw"
-                      type={showNewPw ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Repeat new password"
-                      style={{
-                        width: "100%",
                         padding: "10px 14px",
                         borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border-color)",
-                        backgroundColor: "var(--bg-input)",
-                        color: "var(--text-primary)",
-                        fontSize: 14,
-                        boxSizing: "border-box",
-                        outline: "none",
+                        backgroundColor: "rgba(239, 68, 68, 0.1)",
+                        border: "1px solid rgba(239, 68, 68, 0.25)",
+                        color: "#ef4444",
+                        fontSize: 13,
+                        marginBottom: 14,
+                        textAlign: "center",
                       }}
-                    />
-                  </div>
+                    >
+                      {passwordOtpError}
+                    </div>
+                  )}
 
-                  <div>
+                  {passwordResendMessage && (
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: "var(--radius-md)",
+                        backgroundColor: "rgba(34, 197, 94, 0.1)",
+                        border: "1px solid rgba(34, 197, 94, 0.25)",
+                        color: "#16a34a",
+                        fontSize: 13,
+                        marginBottom: 14,
+                        textAlign: "center",
+                      }}
+                    >
+                      {passwordResendMessage}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: 10,
+                      marginTop: 8,
+                    }}
+                  >
                     <button
-                      type="submit"
-                      disabled={passwordLoading}
+                      type="button"
+                      onClick={() => handleConfirmPasswordOtp()}
+                      disabled={passwordOtpLoading || passwordOtpCode.trim().length !== 6}
                       style={{
                         padding: "10px 22px",
                         borderRadius: "var(--radius-full)",
@@ -619,25 +654,260 @@ export default function SettingsPage() {
                         color: "#fff",
                         fontWeight: 600,
                         fontSize: 14,
-                        cursor: passwordLoading ? "not-allowed" : "pointer",
-                        boxShadow: "var(--shadow-sm)",
+                        cursor:
+                          passwordOtpLoading || passwordOtpCode.trim().length !== 6
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          passwordOtpLoading || passwordOtpCode.trim().length !== 6
+                            ? 0.6
+                            : 1,
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 8,
                       }}
                     >
-                      {passwordLoading ? (
+                      {passwordOtpLoading ? (
                         <>
                           <MarshmallowLoader size="sm" inline label={null} />
-                          <span>Updating...</span>
+                          <span>Verifying...</span>
                         </>
                       ) : (
-                        "Update Password"
+                        "Confirm & Update"
                       )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResendPasswordOtp}
+                      disabled={passwordResendLoading || passwordResendCooldown > 0}
+                      style={{
+                        padding: "9px 16px",
+                        borderRadius: "var(--radius-full)",
+                        border: "1px solid var(--border-color)",
+                        backgroundColor: "var(--bg-hover)",
+                        color: "var(--text-primary)",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        cursor:
+                          passwordResendLoading || passwordResendCooldown > 0
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity:
+                          passwordResendLoading || passwordResendCooldown > 0
+                            ? 0.65
+                            : 1,
+                      }}
+                    >
+                      {passwordResendLoading
+                        ? "Resending..."
+                        : passwordResendCooldown > 0
+                        ? `Resend in ${passwordResendCooldown}s`
+                        : "Resend Code"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCancelPasswordOtp}
+                      disabled={passwordOtpLoading}
+                      style={{
+                        padding: "9px 14px",
+                        borderRadius: "var(--radius-full)",
+                        border: "none",
+                        background: "none",
+                        color: "var(--text-secondary)",
+                        fontWeight: 500,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
                     </button>
                   </div>
                 </div>
-              </form>
+              ) : (
+                <form onSubmit={handleChangePassword}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 14,
+                    }}
+                  >
+                    {/* Current Password */}
+                    <div>
+                      <label
+                        htmlFor="current-pw"
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Current Password
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          id="current-pw"
+                          type={showCurrentPw ? "text" : "password"}
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          placeholder="Enter your current password"
+                          style={{
+                            width: "100%",
+                            padding: "10px 42px 10px 14px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border-color)",
+                            backgroundColor: "var(--bg-input)",
+                            color: "var(--text-primary)",
+                            fontSize: 14,
+                            boxSizing: "border-box",
+                            outline: "none",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPw((prev) => !prev)}
+                          style={{
+                            position: "absolute",
+                            right: 12,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--text-secondary)",
+                            fontSize: 14,
+                            padding: 4,
+                          }}
+                        >
+                          {showCurrentPw ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* New Password */}
+                    <div>
+                      <label
+                        htmlFor="new-pw"
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        New Password
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          id="new-pw"
+                          type={showNewPw ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="At least 6 characters"
+                          style={{
+                            width: "100%",
+                            padding: "10px 42px 10px 14px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border-color)",
+                            backgroundColor: "var(--bg-input)",
+                            color: "var(--text-primary)",
+                            fontSize: 14,
+                            boxSizing: "border-box",
+                            outline: "none",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPw((prev) => !prev)}
+                          style={{
+                            position: "absolute",
+                            right: 12,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--text-secondary)",
+                            fontSize: 14,
+                            padding: 4,
+                          }}
+                        >
+                          {showNewPw ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Confirm Password */}
+                    <div>
+                      <label
+                        htmlFor="confirm-pw"
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Confirm New Password
+                      </label>
+                      <input
+                        id="confirm-pw"
+                        type={showNewPw ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repeat new password"
+                        style={{
+                          width: "100%",
+                          padding: "10px 14px",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--border-color)",
+                          backgroundColor: "var(--bg-input)",
+                          color: "var(--text-primary)",
+                          fontSize: 14,
+                          boxSizing: "border-box",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <button
+                        type="submit"
+                        disabled={passwordLoading}
+                        style={{
+                          padding: "10px 22px",
+                          borderRadius: "var(--radius-full)",
+                          border: "none",
+                          backgroundColor: "var(--primary)",
+                          color: "#fff",
+                          fontWeight: 600,
+                          fontSize: 14,
+                          cursor: passwordLoading ? "not-allowed" : "pointer",
+                          boxShadow: "var(--shadow-sm)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        {passwordLoading ? (
+                          <>
+                            <MarshmallowLoader size="sm" inline label={null} />
+                            <span>Updating...</span>
+                          </>
+                        ) : (
+                          "Update Password"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
             </div>
 
             {/* Danger Zone */}
