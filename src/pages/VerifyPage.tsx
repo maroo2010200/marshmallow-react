@@ -3,15 +3,24 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { MarshmallowLogo } from "../components/MarshmallowLogo";
 import { MarshmallowLoader } from "../components/MarshmallowLoader";
+import { OtpCodeInput } from "../components/auth/OtpCodeInput";
 import { mediaApi } from "../api/media";
 import { usersApi } from "../api/users";
 import { getMediaUrl } from "../utils/media";
 
 export default function VerifyPage() {
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "success" | "error" | "otp">("loading");
   const [message, setMessage] = useState<string>("");
   const navigate = useNavigate();
-  const { verify, user, updateUser } = useAuth();
+  const { verify, verifyCode, resendVerificationEmail, user, updateUser, isAuthenticated } = useAuth();
+
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendMessage, setResendMessage] = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
@@ -25,18 +34,32 @@ export default function VerifyPage() {
   const hasCalledVerify = useRef(false);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [resendCooldown]);
+
+  useEffect(() => {
     // Check before reading query params so navigating away after verification
     // never flashes a missing-token error while the route transition commits.
     if (hasCalledVerify.current) return;
+
+    // If user is already authenticated & verified, show the customize profile card
+    if (isAuthenticated || (user && user.isEmailVerified)) {
+      setStatus("success");
+      return;
+    }
 
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
 
     if (!token) {
-      setStatus("error");
-      setMessage(
-        "Missing verification token. Please check the link in your email or request a new one.",
-      );
+      // If there's no token in query param, prompt user to enter their 6-digit code
+      setStatus("otp");
       return;
     }
 
@@ -75,7 +98,50 @@ export default function VerifyPage() {
     };
 
     attempt();
-  }, [verify]);
+  }, [verify, isAuthenticated, user]);
+
+  const handleVerifyOtp = async (codeToVerify?: string) => {
+    const code = (codeToVerify || otpCode).trim();
+    if (!otpEmail.trim()) {
+      setOtpError("Please enter your email address.");
+      return;
+    }
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+      setOtpError("Please enter the complete 6-digit code.");
+      return;
+    }
+
+    setOtpVerifying(true);
+    setOtpError("");
+    try {
+      await verifyCode(otpEmail.trim(), code);
+      setStatus("success");
+    } catch (err: any) {
+      setOtpError(err?.message || "Invalid or expired verification code.");
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!otpEmail.trim()) {
+      setOtpError("Please enter your email to resend code.");
+      return;
+    }
+    if (resendCooldown > 0 || resendLoading) return;
+    setResendLoading(true);
+    setResendMessage("");
+    setOtpError("");
+    try {
+      const msg = await resendVerificationEmail(otpEmail.trim());
+      setResendMessage(msg || "Verification code sent!");
+      setResendCooldown(60);
+    } catch (err: any) {
+      setOtpError(err?.message || "Failed to resend code.");
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -543,6 +609,235 @@ export default function VerifyPage() {
           </div>
         )}
 
+        {/* OTP Code Entry State (Fallback when no token in URL) */}
+        {status === "otp" && (
+          <div
+            style={{
+              padding: "36px clamp(16px, 5vw, 32px)",
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                width: "56px",
+                height: "56px",
+                margin: "0 auto 16px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(201, 107, 50, 0.12)",
+                color: "var(--primary)",
+                fontSize: "26px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "1px solid rgba(201, 107, 50, 0.25)",
+              }}
+            >
+              ✉️
+            </div>
+
+            <h1
+              style={{
+                fontSize: "clamp(20px, 4.5vw, 22px)",
+                fontWeight: 700,
+                color: "var(--text-primary)",
+                margin: "0 0 8px",
+              }}
+            >
+              Enter Verification Code
+            </h1>
+
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--text-secondary)",
+                margin: "0 auto 20px",
+                lineHeight: 1.5,
+                maxWidth: "380px",
+              }}
+            >
+              Enter the email you registered with and the 6-digit code sent to your inbox.
+            </p>
+
+            <div style={{ textAlign: "left", marginBottom: "14px" }}>
+              <label
+                htmlFor="otp-email"
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                  marginBottom: "6px",
+                }}
+              >
+                Email Address
+              </label>
+              <input
+                id="otp-email"
+                type="email"
+                placeholder="you@example.com"
+                value={otpEmail}
+                onChange={(e) => {
+                  setOtpEmail(e.target.value);
+                  setOtpError("");
+                }}
+                disabled={otpVerifying}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border-color)",
+                  backgroundColor: "var(--bg-input, var(--bg-card))",
+                  color: "var(--text-primary)",
+                  fontSize: "14px",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <OtpCodeInput
+              value={otpCode}
+              onChange={(code) => {
+                setOtpCode(code);
+                setOtpError("");
+              }}
+              onComplete={(code) => handleVerifyOtp(code)}
+              disabled={otpVerifying}
+              hasError={!!otpError}
+              autoFocus
+            />
+
+            {otpError && (
+              <div
+                style={{
+                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                  color: "#ef4444",
+                  border: "1px solid rgba(239, 68, 68, 0.25)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "10px 14px",
+                  fontSize: "13px",
+                  margin: "12px 0",
+                  textAlign: "center",
+                }}
+              >
+                {otpError}
+              </div>
+            )}
+
+            {resendMessage && (
+              <div
+                style={{
+                  backgroundColor: "rgba(43, 138, 62, 0.1)",
+                  color: "#2b8a3e",
+                  border: "1px solid rgba(43, 138, 62, 0.25)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "10px 14px",
+                  fontSize: "13px",
+                  margin: "12px 0",
+                  textAlign: "center",
+                }}
+              >
+                {resendMessage}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => handleVerifyOtp()}
+              disabled={otpVerifying || otpCode.trim().length !== 6 || !otpEmail.trim()}
+              style={{
+                width: "100%",
+                minHeight: 44,
+                padding: "12px 20px",
+                marginTop: "10px",
+                borderRadius: "var(--radius-full)",
+                backgroundColor: "var(--primary)",
+                color: "#ffffff",
+                border: "none",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor:
+                  otpVerifying || otpCode.trim().length !== 6 || !otpEmail.trim()
+                    ? "not-allowed"
+                    : "pointer",
+                opacity:
+                  otpVerifying || otpCode.trim().length !== 6 || !otpEmail.trim()
+                    ? 0.6
+                    : 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                boxShadow: "0 4px 14px rgba(201, 107, 50, 0.3)",
+              }}
+            >
+              {otpVerifying ? (
+                <>
+                  <MarshmallowLoader size="sm" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                "Verify & Continue"
+              )}
+            </button>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginTop: "16px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={resendLoading || resendCooldown > 0 || !otpEmail.trim()}
+                style={{
+                  padding: "11px 18px",
+                  borderRadius: "var(--radius-full)",
+                  backgroundColor: "var(--primary-light)",
+                  color: "var(--primary)",
+                  border: "1px solid rgba(201, 107, 50, 0.2)",
+                  fontWeight: 600,
+                  fontSize: "13.5px",
+                  cursor:
+                    resendLoading || resendCooldown > 0 || !otpEmail.trim()
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    resendLoading || resendCooldown > 0 || !otpEmail.trim()
+                      ? 0.65
+                      : 1,
+                }}
+              >
+                {resendLoading
+                  ? "Resending..."
+                  : resendCooldown > 0
+                  ? `Resend code in ${resendCooldown}s`
+                  : "Resend Code"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "var(--radius-full)",
+                  backgroundColor: "var(--bg-hover)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)",
+                  fontWeight: 600,
+                  fontSize: "13.5px",
+                  cursor: "pointer",
+                }}
+              >
+                Back to Login
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Error State */}
         {status === "error" && (
           <div
@@ -601,7 +896,10 @@ export default function VerifyPage() {
             >
               <button
                 type="button"
-                onClick={() => navigate("/login")}
+                onClick={() => {
+                  setOtpError("");
+                  setStatus("otp");
+                }}
                 style={{
                   width: "100%",
                   minHeight: 44,
@@ -614,6 +912,25 @@ export default function VerifyPage() {
                   fontWeight: 700,
                   cursor: "pointer",
                   boxShadow: "0 4px 14px rgba(201, 107, 50, 0.3)",
+                }}
+              >
+                Enter 6-Digit Code Instead
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                style={{
+                  width: "100%",
+                  minHeight: 40,
+                  padding: "10px 18px",
+                  borderRadius: "var(--radius-full)",
+                  backgroundColor: "var(--bg-hover)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
                 }}
               >
                 Go to Login

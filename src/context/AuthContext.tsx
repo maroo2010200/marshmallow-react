@@ -19,6 +19,7 @@ interface AuthContextValue {
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   verify: (token: string) => Promise<void>;
+  verifyCode: (email: string, code: string) => Promise<void>;
   resendVerificationEmail: (email: string) => Promise<string>;
   updateUser: (updatedData: Partial<User>) => void;
 }
@@ -118,6 +119,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const verifyCode = useCallback(async (email: string, code: string) => {
+    try {
+      const response = await api.post("/auth/verify-code", {
+        email: email.trim().toLowerCase(),
+        code: code.trim(),
+      });
+
+      if (response.data && response.data.token) {
+        const { token: newToken, user: apiUser } = response.data;
+        setToken(newToken);
+        localStorage.setItem("token", newToken);
+        setUser(apiUser);
+      }
+
+      return response.data;
+    } catch (error: any) {
+      const data = error.response?.data;
+      const message =
+        typeof data === "string"
+          ? data
+          : (data?.message ?? "Invalid or expired verification code.");
+      throw new Error(message);
+    }
+  }, []);
+
   const resendVerificationEmail = useCallback(async (email: string) => {
     const response = await api.post(
       "/auth/resend-verification",
@@ -142,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       verify,
+      verifyCode,
       resendVerificationEmail,
       updateUser,
     }),
@@ -153,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       verify,
+      verifyCode,
       resendVerificationEmail,
       updateUser,
     ],
