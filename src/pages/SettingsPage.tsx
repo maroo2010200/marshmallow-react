@@ -149,11 +149,19 @@ export default function SettingsPage() {
         newPassword,
       });
 
-      if (res.requiresOtp) {
+      const requiresOtp = Boolean(
+        res.requiresOtp ??
+          (res as { RequiresOtp?: boolean }).RequiresOtp ??
+          res.message?.toLowerCase().includes("code") ??
+          res.message?.toLowerCase().includes("verification")
+      );
+
+      if (requiresOtp) {
         setPasswordOtpStep(true);
         setPasswordOtpCode("");
         setPasswordOtpError(null);
         setPasswordResendCooldown(60);
+        setPasswordSuccess(null);
       } else {
         setPasswordSuccess(res.message || "Password updated successfully!");
         setCurrentPassword("");
